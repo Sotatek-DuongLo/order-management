@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Order, OrderStatus } from './entities/order.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
@@ -14,6 +15,7 @@ import { PaymentsService } from '../payments/payments.service';
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
+  private readonly AUTO_DELIVERY_DELAY = 30000; // 30 seconds
 
   constructor(
     @InjectRepository(Order)
@@ -41,29 +43,105 @@ export class OrdersService {
           pin: '1234', // Dummy PIN
         });
 
-        // Cập nhật order với payment ID
+        // Cập nhật order dựa trên kết quả payment
         if (paymentResponse.status === 'success') {
           await this.updateOrder(savedOrder.id, {
             paymentId: paymentResponse.paymentId,
             status: OrderStatus.CONFIRMED,
           });
+
+          // Lên lịch auto-delivery sau X giây
+          this.scheduleAutoDelivery(savedOrder.id);
+
+          this.logger.log(
+            `Order ${savedOrder.id} confirmed, scheduled for auto-delivery in ${this.AUTO_DELIVERY_DELAY}ms`,
+          );
         } else {
+          // Payment declined ⇒ chuyển order về CANCELLED
+          await this.updateOrder(savedOrder.id, {
+            status: OrderStatus.CANCELLED,
+          });
+
           this.logger.warn(
-            `Payment failed for order ${savedOrder.id}: ${paymentResponse.message}`,
+            `Payment failed for order ${savedOrder.id}: ${paymentResponse.message}. Order cancelled.`,
           );
         }
       } catch (paymentError) {
         this.logger.error(
           `Payment processing error for order ${savedOrder.id}:`,
-          paymentError.message,
+          (paymentError as Error).message,
         );
-        // Order vẫn được tạo nhưng payment failed
+
+        // Lỗi khi gọi payment service ⇒ chuyển order về CANCELLED
+        await this.updateOrder(savedOrder.id, {
+          status: OrderStatus.CANCELLED,
+        });
       }
 
       return await this.findOne(savedOrder.id);
     } catch (error) {
-      this.logger.error('Error creating order:', error.message);
+      this.logger.error('Error creating order:', (error as Error).message);
       throw new BadRequestException('Failed to create order');
+    }
+  }
+
+  // Lên lịch tự động chuyển order từ CONFIRMED sang DELIVERED
+  private scheduleAutoDelivery(orderId: string): void {
+    setTimeout(() => {
+      void this.performAutoDelivery(orderId);
+    }, this.AUTO_DELIVERY_DELAY);
+  }
+
+  private async performAutoDelivery(orderId: string): Promise<void> {
+    try {
+      const order = await this.findOne(orderId);
+
+      // Chỉ chuyển nếu order vẫn ở trạng thái CONFIRMED
+      if (order.status === OrderStatus.CONFIRMED) {
+        await this.updateOrder(orderId, {
+          status: OrderStatus.DELIVERED,
+        });
+
+        this.logger.log(`Order ${orderId} automatically delivered`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to auto-deliver order ${orderId}:`,
+        (error as Error).message,
+      );
+    }
+  }
+
+  // Cron job để check và auto-deliver các order CONFIRMED cũ (backup)
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleAutoDelivery(): Promise<void> {
+    const cutoffTime = new Date(Date.now() - this.AUTO_DELIVERY_DELAY);
+
+    try {
+      const confirmedOrders = await this.orderRepository
+        .createQueryBuilder('order')
+        .where('order.status = :status', { status: OrderStatus.CONFIRMED })
+        .andWhere('order.updatedAt < :cutoff', { cutoff: cutoffTime })
+        .getMany();
+
+      for (const order of confirmedOrders) {
+        await this.updateOrder(order.id, {
+          status: OrderStatus.DELIVERED,
+        });
+
+        this.logger.log(`Order ${order.id} auto-delivered via cron job`);
+      }
+
+      if (confirmedOrders.length > 0) {
+        this.logger.log(
+          `Auto-delivered ${confirmedOrders.length} orders via cron job`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        'Error in auto-delivery cron job:',
+        (error as Error).message,
+      );
     }
   }
 
