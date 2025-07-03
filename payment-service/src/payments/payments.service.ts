@@ -61,11 +61,6 @@ export class PaymentsService {
         await this.paymentRepository.update(savedPayment.id, {
           status: PaymentStatus.SUCCESS,
           transactionId,
-          metadata: {
-            ...savedPayment.metadata,
-            successAt: new Date().toISOString(),
-            transactionId,
-          },
         });
 
         this.logger.log(
@@ -84,11 +79,6 @@ export class PaymentsService {
         await this.paymentRepository.update(savedPayment.id, {
           status: PaymentStatus.FAILED,
           errorMessage,
-          metadata: {
-            ...savedPayment.metadata,
-            failedAt: new Date().toISOString(),
-            errorMessage,
-          },
         });
 
         this.logger.warn(
@@ -102,11 +92,13 @@ export class PaymentsService {
         };
       }
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(
         `Error processing payment for order ${processPaymentDto.orderId}:`,
-        error.message,
+        errorMessage,
       );
-      throw new Error(`Payment processing failed: ${error.message}`);
+      throw new Error(`Payment processing failed: ${errorMessage}`);
     }
   }
 
@@ -159,29 +151,14 @@ export class PaymentsService {
     });
   }
 
-  // Mock payment processing logic - trả về kết quả ngẫu nhiên
+  // Mock payment processing logic - luôn trả về thành công (happy case)
   private mockPaymentProcessing(paymentData: ProcessPaymentDto): boolean {
-    // Logic mock: 80% thành công, 20% thất bại
-    const successRate = 0.8;
-    const random = Math.random();
-
-    // Thêm một số điều kiện đặc biệt để test
-    if (paymentData.amount > 10000) {
-      // Thanh toán lớn hơn 10,000 có tỷ lệ thất bại cao hơn
-      return Math.random() < 0.3;
-    }
-
+    // Happy case: luôn thành công
     if (paymentData.pin === '0000') {
-      // PIN 0000 luôn thất bại
       return false;
     }
 
-    if (paymentData.authToken.includes('invalid')) {
-      // Token không hợp lệ
-      return false;
-    }
-
-    return random < successRate;
+    return true;
   }
 
   // Lấy thông báo lỗi ngẫu nhiên
