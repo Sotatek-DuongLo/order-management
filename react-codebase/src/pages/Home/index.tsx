@@ -3,10 +3,13 @@ import {Eye} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import {Button} from "@mui/material";
 import {useQuery} from "@tanstack/react-query";
-import {useState} from "react";
+import {useState, useEffect} from "react";
 import ApiOrder from "@/api/ApiOrder";
 import QUERY_KEY from "@/api/QueryKey";
 import {IOrder} from "@/types";
+import { useLongPolling } from "@/hooks/useLongPolling";
+import { orderEvents, notificationEvents } from "@/utils/eventBus";
+import { toast } from "react-toastify";
 
 const PAGE_SIZE = 10;
 
@@ -18,10 +21,57 @@ export default function Home(): JSX.Element {
     data: orderData,
     isLoading,
     isError,
+    refetch
   } = useQuery({
     queryKey: [QUERY_KEY.ORDER.LIST, currentPage],
     queryFn: () => ApiOrder.getOrders({page: currentPage, limit: PAGE_SIZE}),
   });
+
+  // Long polling để theo dõi thay đổi đơn hàng
+  const { isPolling } = useLongPolling({
+    queryKey: [QUERY_KEY.ORDER.LIST, currentPage],
+    enabled: true,
+    interval: 10000, // Poll mỗi 10 giây
+  });
+
+  // Subscribe to order events
+  useEffect(() => {
+    // Listen for order refresh events
+    const unsubscribeRefresh = orderEvents.onRefresh(() => {
+      refetch();
+    });
+
+    // Listen for order status changes
+    const unsubscribeStatusChange = orderEvents.onStatusChanged((data) => {
+      toast.info(`Đơn hàng ${data.orderId.slice(0, 8)}... đã chuyển trạng thái thành ${data.newStatus}`, {
+        position: "top-right",
+        autoClose: 5000,
+      });
+    });
+
+    // Listen for notifications
+    const unsubscribeNotifications = notificationEvents.onShow((data) => {
+      switch (data.type) {
+        case 'success':
+          toast.success(data.message);
+          break;
+        case 'error':
+          toast.error(data.message);
+          break;
+        case 'warning':
+          toast.warn(data.message);
+          break;
+        default:
+          toast.info(data.message);
+      }
+    });
+
+    return () => {
+      unsubscribeRefresh();
+      unsubscribeStatusChange();
+      unsubscribeNotifications();
+    };
+  }, [refetch]);
 
   // Chuẩn hóa dữ liệu cho Table
   const tableData =
@@ -76,15 +126,20 @@ export default function Home(): JSX.Element {
       key: "status",
       width: 120,
       render: (status: string) => {
-        if (status === "created")
-          return <span className="text-green-600 font-semibold">Đã tạo</span>;
-        if (status === "cancelled")
-          return <span className="text-red-500 font-semibold">Đã hủy</span>;
-        if (status === "confirmed")
-          return <span className="text-blue-600 font-semibold">Đã xác nhận</span>;
-        if (status === "delivered")
-          return <span className="text-purple-600 font-semibold">Đã giao hàng</span>;
-        return status;
+        const statusConfig = {
+          created: { text: "Đã tạo", color: "text-yellow-600 bg-yellow-100" },
+          confirmed: { text: "Đã xác nhận", color: "text-blue-600 bg-blue-100" },
+          delivered: { text: "Đã giao hàng", color: "text-green-600 bg-green-100" },
+          cancelled: { text: "Đã hủy", color: "text-red-600 bg-red-100" }
+        };
+        
+        const config = statusConfig[status as keyof typeof statusConfig] || { text: status, color: "text-gray-600 bg-gray-100" };
+        
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${config.color}`}>
+            {config.text}
+          </span>
+        );
       },
     },
     {
@@ -125,6 +180,15 @@ export default function Home(): JSX.Element {
     <div className="flex flex-col items-center justify-center w-full h-full gap-4 mb-10">
       <div className="text-4xl font-bold text-center">Các order của bạn</div>
       <div className="text-2xl text-center">Quản lý đơn hàng</div>
+      
+      {/* Indicator cho long polling */}
+      {isPolling && (
+        <div className="flex items-center gap-2 text-green-600 text-sm">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span>Đang theo dõi cập nhật real-time</span>
+        </div>
+      )}
+      
       <div className="container flex flex-col gap-4">
         <div className="flex justify-end w-full px-10">
           <Button

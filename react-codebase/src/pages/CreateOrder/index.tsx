@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import {
@@ -10,14 +10,19 @@ import {
   Card,
   CardContent,
   IconButton,
+  Autocomplete,
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import 'react-toastify/dist/ReactToastify.css';
+import ApiOrder from '@/api/ApiOrder';
+import { IProduct } from '@/types';
+import { orderEvents } from '@/utils/eventBus';
 
 interface OrderItem {
-  productId: string;
+  productId: number;
   quantity: number;
   price: number;
 }
@@ -31,7 +36,7 @@ const validationSchema = Yup.object({
   notes: Yup.string(),
   items: Yup.array().of(
     Yup.object({
-      productId: Yup.string().required('ID sản phẩm là bắt buộc'),
+      productId: Yup.number().required('Sản phẩm là bắt buộc'),
       quantity: Yup.number()
         .min(1, 'Số lượng phải lớn hơn 0')
         .required('Số lượng là bắt buộc'),
@@ -45,15 +50,57 @@ const validationSchema = Yup.object({
 export default function CreateOrder(): JSX.Element {
   const navigate = useNavigate();
 
+  // Lấy danh sách sản phẩm từ API
+  const {
+    data: products,
+    isLoading: isLoadingProducts,
+    isError: isErrorProducts,
+  } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => ApiOrder.getProducts(),
+  });
+
+  // Mutation để tạo order
+  const createOrderMutation = useMutation({
+    mutationFn: (orderData: any) => ApiOrder.createOrder(orderData),
+    onSuccess: (createdOrder) => {
+      toast.success('Đơn hàng đã được tạo thành công! Đang chuyển về trang chủ...', {
+        position: "top-right",
+        autoClose: 2000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      // Emit order creation event
+      orderEvents.created(createdOrder.id, createdOrder.userId);
+      
+      setTimeout(() => {
+        navigate('/');
+      }, 2000);
+    },
+    onError: () => {
+      toast.error('Có lỗi xảy ra khi tạo đơn hàng. Vui lòng thử lại!', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    },
+  });
+
   const formik = useFormik({
     initialValues: {
-      userId: '',
+      userId: 'duonglv',
       totalAmount: 0,
       deliveryAddress: '',
       notes: '',
       items: [
         {
-          productId: '',
+          productId: 0,
           quantity: 1,
           price: 0,
         },
@@ -61,41 +108,19 @@ export default function CreateOrder(): JSX.Element {
     },
     validationSchema,
     onSubmit: async (values) => {
-      try {
-        const newOrderData = {
-          userId: values.userId,
-          totalAmount: values.totalAmount,
-          items: values.items,
-          deliveryAddress: values.deliveryAddress,
-          notes: values.notes,
-        };
+      const orderData = {
+        userId: values.userId,
+        totalAmount: values.totalAmount,
+        items: values.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        deliveryAddress: values.deliveryAddress,
+        notes: values.notes,
+      };
 
-        // TODO: Gọi API để tạo order
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        toast.success('Đơn hàng đã được tạo thành công! Đang chuyển về trang chủ...', {
-          position: "top-right",
-          autoClose: 2000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
-        
-        setTimeout(() => {
-          navigate('/');
-        }, 2000);
-      } catch {
-        toast.error('Có lỗi xảy ra khi tạo đơn hàng. Vui lòng thử lại!', {
-          position: "top-right",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
-      }
+      createOrderMutation.mutate(orderData);
     },
   });
 
@@ -116,7 +141,7 @@ export default function CreateOrder(): JSX.Element {
   const addItem = () => {
     formik.setFieldValue('items', [
       ...formik.values.items,
-      { productId: '', quantity: 1, price: 0 },
+      { productId: 0, quantity: 1, price: 0 },
     ]);
   };
 
@@ -138,6 +163,42 @@ export default function CreateOrder(): JSX.Element {
     const newTotal = newItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
     formik.setFieldValue('totalAmount', newTotal);
   };
+
+  const handleProductChange = (index: number, product: IProduct | null) => {
+    const newItems = [...formik.values.items];
+    
+    if (product) {
+      newItems[index] = { 
+        ...newItems[index], 
+        productId: product.id, 
+        price: product.price 
+      };
+    } else {
+      newItems[index] = { 
+        ...newItems[index], 
+        productId: 0, 
+        price: 0 
+      };
+    }
+    
+    formik.setFieldValue('items', newItems);
+    formik.setFieldTouched(`items.${index}.productId`, true);
+    
+    // Recalculate total amount
+    const newTotal = newItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    formik.setFieldValue('totalAmount', newTotal);
+  };
+  const getProductById = (productId: number): IProduct | undefined => {
+    return products?.find((p: IProduct) => p.id === productId);
+  };
+
+  if (isLoadingProducts) {
+    return <div className="text-center text-lg mt-10">Đang tải danh sách sản phẩm...</div>;
+  }
+
+  if (isErrorProducts) {
+    return <div className="text-center text-red-500 mt-10">Không thể tải danh sách sản phẩm</div>;
+  }
 
   return (
     <div className="container flex flex-col w-full h-full gap-6 mx-auto">
@@ -167,7 +228,7 @@ export default function CreateOrder(): JSX.Element {
                   </Typography>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                   <TextField
                     fullWidth
                     id="userId"
@@ -177,21 +238,10 @@ export default function CreateOrder(): JSX.Element {
                     onChange={formik.handleChange}
                     error={formik.touched.userId && Boolean(formik.errors.userId)}
                     helperText={formik.touched.userId && formik.errors.userId}
-                  />
-
-                  <TextField
-                    fullWidth
-                    id="totalAmount"
-                    name="totalAmount"
-                    label="Tổng tiền (VND)"
-                    type="number"
-                    value={formik.values.totalAmount}
-                    onChange={formik.handleChange}
-                    error={formik.touched.totalAmount && Boolean(formik.errors.totalAmount)}
-                    helperText={formik.touched.totalAmount && formik.errors.totalAmount}
                     InputProps={{
                       readOnly: true,
                     }}
+                    disabled
                   />
                 </div>
 
@@ -244,23 +294,32 @@ export default function CreateOrder(): JSX.Element {
                   <div key={index} className="mb-4">
                     <Card variant="outlined" className="p-4">
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                        <div className="md:col-span-3">
-                          <TextField
-                            fullWidth
-                            label="ID Sản phẩm"
-                            value={item.productId}
-                            onChange={(e) => updateItem(index, 'productId', e.target.value)}
-                            error={
-                              formik.touched.items?.[index]?.productId &&
-                              Boolean((formik.errors.items?.[index] as any)?.productId)
-                            }
-                            helperText={
-                              formik.touched.items?.[index]?.productId &&
-                              (formik.errors.items?.[index] as any)?.productId
-                            }
+                        <div className="md:col-span-4">
+                          <Autocomplete
+                            options={products || []}
+                            getOptionLabel={(option: IProduct) => `${option.name} - ${new Intl.NumberFormat('vi-VN', {
+                              style: 'currency',
+                              currency: 'VND'
+                            }).format(option.price)}`}
+                            value={getProductById(item.productId) || null}
+                            onChange={(_, newValue) => handleProductChange(index, newValue)}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="Chọn sản phẩm"
+                                error={
+                                  formik.touched.items?.[index]?.productId &&
+                                  Boolean((formik.errors.items?.[index] as any)?.productId)
+                                }
+                                helperText={
+                                  formik.touched.items?.[index]?.productId &&
+                                  (formik.errors.items?.[index] as any)?.productId
+                                }
+                              />
+                            )}
                           />
                         </div>
-                        <div className="md:col-span-3">
+                        <div className="md:col-span-2">
                           <TextField
                             fullWidth
                             label="Số lượng"
@@ -283,15 +342,9 @@ export default function CreateOrder(): JSX.Element {
                             label="Giá (VND)"
                             type="number"
                             value={item.price}
-                            onChange={(e) => updateItem(index, 'price', parseInt(e.target.value) || 0)}
-                            error={
-                              formik.touched.items?.[index]?.price &&
-                              Boolean((formik.errors.items?.[index] as any)?.price)
-                            }
-                            helperText={
-                              formik.touched.items?.[index]?.price &&
-                              (formik.errors.items?.[index] as any)?.price
-                            }
+                            InputProps={{
+                              readOnly: true,
+                            }}
                           />
                         </div>
                         <div className="md:col-span-2">
@@ -329,7 +382,7 @@ export default function CreateOrder(): JSX.Element {
                   <Button
                     variant="outlined"
                     onClick={() => navigate('/')}
-                    disabled={formik.isSubmitting}
+                    disabled={createOrderMutation.isPending}
                   >
                     Hủy
                   </Button>
@@ -337,9 +390,9 @@ export default function CreateOrder(): JSX.Element {
                     type="submit"
                     variant="contained"
                     color="primary"
-                    disabled={formik.isSubmitting || !formik.isValid}
+                    disabled={createOrderMutation.isPending || !formik.isValid}
                   >
-                    {formik.isSubmitting ? 'Đang tạo...' : 'Tạo đơn hàng'}
+                    {createOrderMutation.isPending ? 'Đang tạo...' : 'Tạo đơn hàng'}
                   </Button>
                 </div>
               </div>

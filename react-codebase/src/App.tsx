@@ -4,6 +4,8 @@ import Home from "./pages/Home";
 import About from "./pages/About";
 import OrderDetail from "./pages/OrderDetail";
 import CreateOrder from "./pages/CreateOrder";
+import Dashboard from "./pages/Dashboard";
+import RealTimeIndicator from "./components/RealTimeIndicator";
 import { ToastContainer } from "react-toastify";
 
 function App() {
@@ -19,6 +21,7 @@ function App() {
             }
           >
             <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="about" element={<About />} />
             <Route path="/create-order" element={<CreateOrder />} />
             <Route path="order-detail/:id" element={<OrderDetail />} />
@@ -33,6 +36,7 @@ function App() {
         newestOnTop
         pauseOnHover
       />
+      <RealTimeIndicator isPolling={true} />
       </BrowserRouter>
     </>
   );
