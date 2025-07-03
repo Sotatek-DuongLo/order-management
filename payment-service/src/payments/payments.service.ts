@@ -153,11 +153,12 @@ export class PaymentsService {
 
   // Mock payment processing logic - luôn trả về thành công (happy case)
   private mockPaymentProcessing(paymentData: ProcessPaymentDto): boolean {
-    // Happy case: luôn thành công
+    // Chỉ thất bại khi PIN là '0000', các trường hợp khác đều thành công
     if (paymentData.pin === '0000') {
       return false;
     }
 
+    // Luôn thành công cho các PIN khác
     return true;
   }
 

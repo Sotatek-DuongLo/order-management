@@ -42,7 +42,7 @@ export class PaymentsService {
 
       const response = await firstValueFrom(
         this.httpService.post<PaymentResponse>(
-          `${this.paymentsApiUrl}/payments/process`,
+          `${this.paymentsApiUrl}/api/payments/process`,
           {
             orderId: paymentRequest.orderId,
             userId: paymentRequest.userId,
@@ -75,7 +75,7 @@ export class PaymentsService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<PaymentResponse>(
-          `${this.paymentsApiUrl}/payments/${paymentId}`,
+          `${this.paymentsApiUrl}/api/payments/${paymentId}`,
         ),
       );
       return response.data;

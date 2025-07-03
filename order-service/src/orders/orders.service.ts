@@ -40,7 +40,7 @@ export class OrdersService {
           userId: savedOrder.userId,
           amount: savedOrder.totalAmount,
           authToken: `dummy_token_${savedOrder.userId}`, // Dummy token
-          pin: '1234', // Dummy PIN
+          pin: '1111', // Sử dụng PIN khác '0000' để đảm bảo thành công
         });
 
         // Cập nhật order dựa trên kết quả payment
