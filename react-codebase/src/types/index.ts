@@ -1,17 +1,17 @@
 export interface IOrder {
   id: string;
   userId: string;
-  totalAmount: number;
+  totalAmount: string;
   status: EOrderStatus;
   items?: Array<{
     id: number;
     name: string;
     quantity: number;
     price: number;
-  }>;
-  paymentId?: string;
-  deliveryAddress?: string;
-  notes?: string;
+  }> | null;
+  paymentId?: string | null;
+  deliveryAddress?: string | null;
+  notes?: string | null;
   createdAt: string;
   updatedAt: string;
   onClick?: () => void;
@@ -103,7 +103,7 @@ export interface IDataWithMeta<T> {
     totalPage: number;
     totalItems: number;
     currentPage: number;
-    pageSize: number;
+    pageSize?: number;
   };
 }
 

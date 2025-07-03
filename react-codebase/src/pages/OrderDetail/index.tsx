@@ -1,41 +1,35 @@
-
 import {Breadcrumbs, Button, Link, Typography} from "@mui/material";
-import { EOrderStatus, IOrder } from "@/types";
+import {useParams} from "react-router-dom";
+import {useQuery} from "@tanstack/react-query";
+import ApiOrder from "@/api/ApiOrder";
+import {EOrderStatus, IOrder} from "@/types";
 
 export default function OrderDetail(): JSX.Element {
-  // Dữ liệu mẫu cho order detail
-  const mockOrder: IOrder = {
-    id: "order-1-123456789",
-    userId: "user-1",
-    totalAmount: 150000,
-    status: EOrderStatus.DELIVERED,
-    items: [
-      {
-        id: 1,
-        name: "Sản phẩm 1",
-        quantity: 2,
-        price: 75000,
-      },
-    ],
-    deliveryAddress: "123 Nguyễn Văn A, Quận 1, TP.HCM",
-    notes: "Giao hàng vào buổi sáng, gọi điện trước khi giao",
-    createdAt: "2024-01-15T08:00:00.000Z",
-    updatedAt: "2024-01-15T10:30:00.000Z",
-  };
+  const { id } = useParams<{ id: string }>();
+  const {
+    data: orderData,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["order-detail", id],
+    queryFn: () => ApiOrder.getOrderById(id!),
+    enabled: !!id,
+  });
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("vi-VN");
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: string | number) => {
+    const num = typeof amount === "string" ? parseFloat(amount) : amount;
     return new Intl.NumberFormat("vi-VN", {
       style: "currency",
       currency: "VND",
-    }).format(amount);
+    }).format(num);
   };
 
-  const getStatusText = (status: EOrderStatus) => {
-    const statusMap = {
+  const getStatusText = (status: EOrderStatus | string) => {
+    const statusMap: Record<string, string> = {
       [EOrderStatus.CREATED]: "Đã tạo",
       [EOrderStatus.CONFIRMED]: "Đã xác nhận",
       [EOrderStatus.DELIVERED]: "Đã giao hàng",
@@ -43,6 +37,15 @@ export default function OrderDetail(): JSX.Element {
     };
     return statusMap[status] || status;
   };
+
+  if (isLoading) {
+    return <div className="text-center text-lg mt-10">Đang tải chi tiết đơn hàng...</div>;
+  }
+  if (isError || !orderData) {
+    return <div className="text-center text-red-500 mt-10">Không thể tải chi tiết đơn hàng</div>;
+  }
+
+  const order: IOrder = orderData;
 
   return (
     <div className="container flex flex-col w-full h-full gap-6 mx-auto">
@@ -59,43 +62,43 @@ export default function OrderDetail(): JSX.Element {
           <div className="flex flex-row justify-between items-center mb-5">
             <div className="text-4xl font-bold">Chi tiết đơn hàng</div>
             <div className="text-md font-bold">
-              {getStatusText(mockOrder.status)}
+              {getStatusText(order.status)}
             </div>
           </div>
           <div className="flex flex-col gap-3">
             <div className="text-md font-bold">Mã đơn hàng:</div>
-            <div className="text-md font-medium">{mockOrder.id}</div>
+            <div className="text-md font-medium">{order.id}</div>
           </div>
           <div className="flex flex-col gap-3">
             <div className="text-md font-bold">ID khách hàng:</div>
-            <div className="text-md font-medium">{mockOrder.userId}</div>
+            <div className="text-md font-medium">{order.userId}</div>
           </div>
           <div className="flex flex-col gap-3">
             <div className="text-md font-bold">Địa chỉ giao hàng:</div>
             <div className="text-md font-medium">
-              {mockOrder.deliveryAddress}
+              {order.deliveryAddress}
             </div>
           </div>
           <div className="flex flex-col gap-3">
             <div className="text-md font-bold">Ngày đặt hàng:</div>
             <div className="text-md font-medium">
-              {formatDate(mockOrder.createdAt)}
+              {formatDate(order.createdAt)}
             </div>
           </div>
           <div className="flex flex-col gap-3">
             <div className="text-md font-bold">Ghi chú:</div>
             <div className="text-md font-normal mb-4 text-justify">
-              {mockOrder.notes}
+              {order.notes}
             </div>
           </div>
         </div>
         <div className="w-1/3 h-full">
           <div className="border border-gray-300 rounded-lg p-5 flex flex-col shadow-md justify-center gap-4 mb-4">
             <div className="text-2xl font-bold">Sản phẩm:</div>
-            {mockOrder.items?.map((item: any, index: number) => (
+            {order.items?.map((item: any, index: number) => (
               <div key={index} className="flex flex-col gap-3">
                 <div className="text-md font-bold">Sản phẩm {index + 1}:</div>
-                <div className="text-md font-medium">ID: {item.productId}</div>
+                <div className="text-md font-medium">ID: {item.productId || item.id}</div>
                 <div className="text-md font-medium">
                   Số lượng: {item.quantity}
                 </div>
@@ -108,7 +111,7 @@ export default function OrderDetail(): JSX.Element {
             <div className="flex flex-row justify-between gap-3">
               <div className="text-md font-bold">Tổng tiền:</div>
               <div className="text-md font-medium">
-                {formatCurrency(mockOrder.totalAmount)}
+                {formatCurrency(order.totalAmount)}
               </div>
             </div>
           </div>

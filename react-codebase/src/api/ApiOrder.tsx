@@ -1,4 +1,4 @@
-import { fetcher } from "./Fetcher";
+import { fetcher, fetcherWithMetadata } from "./Fetcher";
 import {
   IOrder,
   IProduct,
@@ -36,7 +36,7 @@ const paymentPaths = {
 
 // Order API functions
 function getOrders(params?: any): Promise<IDataWithMeta<IOrder[]>> {
-  return fetcher({
+  return fetcherWithMetadata({
     url: orderPaths.orders,
     method: "GET",
     params,
